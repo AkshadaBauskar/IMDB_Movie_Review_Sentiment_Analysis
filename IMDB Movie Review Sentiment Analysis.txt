@@ -1,0 +1,301 @@
+IMDB Movie Review Sentiment
+Problem Description
+The dataset is the Large Movie Review Dataset often referred to as the IMDB dataset.
+
+The Large Movie Review Dataset (often referred to as the IMDB dataset) contains 25,000 highly polar moving reviews (good or bad) for training and the same amount again for testing. The problem is to determine whether a given moving review has a positive or negative sentiment.
+
+The data was collected by Stanford researchers and was used in a 2011 paper [PDF] where a split of 50/50 of the data was used for training and test. An accuracy of 88.89% was achieved.
+
+The data was also used as the basis for a Kaggle competition titled Bag of Words Meets Bags of Popcorn in late 2014 to early 2015. Accuracy was achieved above 97% with winners achieving 99%.
+
+import numpy as np
+
+import keras
+from keras.models import Sequential, Model
+from keras.layers import Dense, Flatten
+from keras.layers.embeddings import Embedding
+from keras.preprocessing import sequence
+
+import matplotlib.pyplot as plt
+%matplotlib inline
+
+import tensorflow as tf
+tf.test.gpu_device_name()
+
+# fix random seed for reproducibility
+random_state = 42
+np.random.seed(random_state)
+Load the IMDB Dataset With Keras
+Keras provides access to the IMDB dataset built-in.
+
+The keras.datasets.imdb.load_data() allows you to load the dataset in a format that is ready for use in neural network and deep learning models.
+
+The words have been replaced by integers that indicate the absolute popularity of the word in the dataset. Words were ordered by frequency then assigned integers based on that frequency. The sentences in each review are therefore comprised of a sequence of integers.
+
+Calling imdb.load_data() the first time will download the IMDB dataset to your computer and store it in your home directory under ~/.keras/datasets/imdb.pkl as a 32 megabyte file.
+
+Usefully, the imdb.load_data() provides additional arguments including the number of top words to load (where words with a lower integer are marked as zero in the returned data), the number of top words to skip (to avoid the “the”‘s) and the maximum length of reviews to support.
+
+Let’s load the dataset and calculate some properties of it. We will start off by loading some libraries and loading the entire IMDB dataset as a training dataset.
+
+#Load the dataset
+(X_train, y_train), (X_test, y_test) = keras.datasets.load_data("IMDB Movie Review Sentiment Analysis.txt")
+X = np.concatenate((X_train, X_test), axis= 0)
+y = np.concatenate((y_train, y_test), axis= 0)
+
+# summarize size and shape of the training dataset.
+print("Training data: ")
+print(X.shape)
+print(y.shape)
+
+# Summarize number of classes
+print("Classes:", np.unique(y))
+
+print(X_train[0])
+print(y_train[0])
+
+Next we can get an idea of the total number of unique words in the dataset.
+print("Number of words: ", len(np.unique(np.hstack(X))))
+Interestingly, we can see that there are just under 100,000 words across the entire dataset.
+
+Finally, we can get an idea of the average review length.
+
+print("Review Length:")
+result = [len(x) for x in X]
+print("Mean %.2f words (%f)" % (np.mean(result), np.std(result)))
+
+Looking at a box and whisker plot for the review lengths in words, we can probably see an exponential distribution that we can probably cover the mass of the distribution with a clipped length of 400 to 500 words.
+
+# plot review length
+plt.figure(figsize=(18, 6))
+
+# summarize history for loss
+plt.subplot(121)
+plt.boxplot(result)
+plt.grid(which='major')
+
+plt.subplot(122)
+plt.hist(result, bins=50)
+plt.grid(which='major');
+
+Word Embeddings
+A recent breakthrough in the field of natural language processing is called word embedding.
+
+This is a technique where words are encoded as real-valued vectors in a high-dimensional space, where the similarity between words in terms of meaning translates to closeness in the vector space.
+
+Discrete words are mapped to vectors of continuous numbers. This is useful when working with natural language problems with neural networks and deep learning models are we require numbers as input.
+
+Keras provides a convenient way to convert positive integer representations of words into a word embedding by an Embedding Layer.
+
+The layer takes arguments that define the mapping including the maximum number of expected words also called the vocabulary size (e.g. the largest integer value that will be seen as an integer). The layer also allows you to specify the dimensionality for each word vector, called the output dimension.
+
+We would like to use a word embedding representation for the IMDB dataset.
+
+Let’s say that we are only interested in the first 5,000 most used words in the dataset. Therefore our vocabulary size will be 5,000. We can choose to use a 32-dimension vector to represent each word. Finally, we may choose to cap the maximum review length at 500 words, truncating reviews longer than that and padding reviews shorter than that with 0 values.
+
+We would then use the Keras utility to truncate or pad the dataset to a length of 500 for each observation using the sequence.pad_sequences() function.
+
+The first layer of our model would be an word embedding layer created using this Embedding class.
+
+Simple Multi-Layer Perceptron Model for the IMDB Dataset
+We can start off by developing a simple multi-layer perceptron model with a single hidden layer.
+
+The word embedding representation is a true innovation and we will demonstrate what would have been considered world class results in 2011 with a relatively simple neural network.
+
+We will load the IMDB dataset. We will simplify the dataset as discussed during the section on word embeddings. Only the top 5,000 words will be loaded.
+
+We will also use a 70%/20%/10% split of the dataset into training, validation and test. This is a good standard split methodology.
+
+top_words = 5000
+(X_train, y_train), (X_test, y_test) = keras.datasets.imdb.load_data(num_words=top_words)
+X = np.concatenate((X_train, X_test), axis=0)
+y = np.concatenate((y_train, y_test), axis=0)
+print(X.shape)
+
+
+We will bound reviews at 500 words, truncating longer reviews and zero-padding shorter reviews.
+max_words = 500
+X = sequence.pad_sequences(X, maxlen=max_words)
+
+Explicitly split the training, validation and test sets
+X_train, X_valid, X_test = X[:35000], X[35000:45000], X[45000:]
+y_train, y_valid, y_test = y[:35000], y[35000:45000], y[45000:]
+print('Train Samples:      {0}'.format(X_train.shape))
+print('Validation Samples: {0}'.format(X_valid.shape))
+print('Test Samples:       {0}'.format(X_test.shape))
+
+print('Train Samples:      {0}'.format(y_train.shape))
+print('Validation Samples: {0}'.format(y_valid.shape))
+print('Test Samples:       {0}'.format(y_test.shape))
+
+Building the Model Architecture
+
+model = Sequential()
+model.add(Embedding(input_dim=top_words, output_dim=32, input_length=max_words))
+model.add(Flatten())
+model.add(Dense(256, activation='relu', kernel_regularizer=keras.regularizers.l2(0.2)))
+model.add(Dense(1, activation='sigmoid'))
+model.summary()
+
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+embedding_1 (Embedding)      (None, 500, 32)           160000    
+_________________________________________________________________
+flatten_1 (Flatten)          (None, 16000)             0         
+_________________________________________________________________
+dense_1 (Dense)              (None, 256)               4096256   
+_________________________________________________________________
+dense_2 (Dense)              (None, 1)                 257       
+=================================================================
+Total params: 4,256,513
+Trainable params: 4,256,513
+Non-trainable params: 0
+
+model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+
+Training the Model
+
+# Fit the model
+from keras.callbacks import EarlyStopping
+history = model.fit(X_train, 
+                    y_train, 
+                    validation_data=(X_valid, y_valid), 
+                    epochs=10, 
+                    batch_size=128, 
+                    callbacks=[EarlyStopping(monitor='val_loss', patience=3)],
+                    verbose=2).history
+
+Evaluating the Model on Test Set
+
+# Final evaluation of the model
+scores = model.evaluate(X_test, y_test, verbose=0)
+print("Test Accuracy: %.2f%%" % (scores[1]*100))
+Test Accuracy: 86.28%
+
+Plotting Training vs Validation Loss & Accuracy
+
+plt.figure(figsize=(14, 4))
+
+# Loss
+plt.subplot(121)
+plt.plot(range(1, len(history['loss']) + 1), history['loss'])
+if 'val_loss' in history:
+    plt.plot(range(1, len(history['val_loss']) + 1), history['val_loss'])
+plt.title('Model Loss')
+plt.ylabel('Loss')
+plt.xlabel('Epoch')
+plt.legend(['Train', 'Validation'] if 'val_loss' in history else ['Train'], loc='upper left')
+
+# Accuracy
+plt.subplot(122)
+plt.plot(range(1, len(history['accuracy']) + 1), history['accuracy'])
+if 'val_accuracy' in history:
+    plt.plot(range(1, len(history['val_accuracy']) + 1), history['val_accuracy'])
+plt.title('Model Accuracy')
+plt.ylabel('Accuracy')
+plt.xlabel('Epoch')
+plt.legend(['Train', 'Validation'] if 'val_accuracy' in history else ['Train'], loc='upper left')
+
+plt.show()
+
+One-Dimensional Convolutional Neural Network Model for the IMDB Dataset
+Convolutional neural networks were designed to honor the spatial structure in image data whilst being robust to the position and orientation of learned objects in the scene.
+
+This same principle can be used on sequences, such as the one-dimensional sequence of words in a movie review. The same properties that make the CNN model attractive for learning to recognize objects in images can help to learn structure in paragraphs of words, namely the techniques invariance to the specific position of features.
+
+Keras supports one-dimensional convolutions and pooling by the Conv1D and MaxPooling1D classes respectively.
+
+# CNN for the IMDB problem
+import numpy as np
+from keras.datasets import imdb
+from tensorflow.keras.models import Sequential, Model
+from tensorflow.keras.layers import Dense, Flatten, Conv1D, MaxPooling1D, Embedding
+from tensorflow.keras.preprocessing import sequence
+
+# fix random seed for reproducibility
+random_state = 42
+np.random.seed(random_state)
+
+# load the dataset but only keep the top n words, zero the rest
+top_words = 5000
+#Pad with explicit dtype to avoid object arrays
+seq_len = 500
+X_train = sequence.pad_sequences(X_train, maxlen=seq_len, dtype='int32')
+X_test = sequence.pad_sequences(X_test, maxlen=seq_len, dtype='int32')
+
+X = np.concatenate((X_train, X_test), axis=0)
+y = np.concatenate((y_train, y_test), axis=0).astype('float32')  #
+
+(X_train, y_train), (X_test, y_test) = keras.datasets.imdb.load_data(num_words=top_words)
+X = np.concatenate((X_train, X_test), axis=0)
+y = np.concatenate((y_train, y_test), axis=0)
+
+print(X.shape)
+
+X_train, X_valid, X_test = X[:35000], X[35000:45000], X[45000:]
+y_train, y_valid, y_test = y[:35000], y[35000:45000], y[45000:]
+print('Train Samples:      {0}'.format(X_train.shape))
+print('Validation Samples: {0}'.format(X_valid.shape))
+print('Test Samples:       {0}'.format(X_test.shape))
+
+print('Train Samples:      {0}'.format(y_train.shape))
+print('Validation Samples: {0}'.format(y_valid.shape))
+print('Test Samples:       {0}'.format(y_test.shape))
+
+Building the Model Architecture
+We can now define our convolutional neural network model. This time, after the Embedding input layer, we insert a Conv1D layer. This convolutional layer has 32 feature maps and reads embedded word representations 3 vector elements of the word embedding at a time.
+
+The convolutional layer is followed by a 1D max pooling layer with a length and stride of 2 that halves the size of the feature maps from the convolutional layer. The rest of the network is the same as the neural network above.
+
+# create the model
+model = Sequential()
+model.add(Embedding(input_dim=top_words, output_dim=32,  input_shape=(500,)))
+model.add(Conv1D(filters=32, kernel_size=3, padding='same', activation='relu', kernel_initializer='he_normal'))
+model.add(MaxPooling1D(pool_size=2))
+model.add(Flatten())
+model.add(Dense(256, activation='relu', kernel_initializer='he_normal'))
+model.add(Dense(1, activation='sigmoid', kernel_regularizer=keras.regularizers.l2(0.1)))
+model.summary()
+
+model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+early_stop = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
+
+history = model.fit(
+    X_train, y_train,
+    validation_data=(X_valid, y_valid),
+    epochs=10,
+    batch_size=128,
+    callbacks=[early_stop],
+    verbose=2
+)
+
+
+Plotting Training vs Validation Loss & Accuracy
+
+plt.figure(figsize=(14, 4))
+
+# summarize history for loss
+plt.subplot(121)
+plt.plot(range(1, len(history['loss']) + 1), history['loss'])
+plt.plot(range(1, len(history['loss']) + 1), history['val_loss'])
+plt.title('model loss')
+plt.ylabel('loss')
+plt.xlabel('epoch')
+plt.legend(['train', 'test'], loc='upper left')
+
+plt.subplot(122)
+plt.plot(range(1, len(history['acc']) + 1), history['acc'])
+plt.plot(range(1, len(history['acc']) + 1), history['val_acc'])
+plt.title('model accuracy')
+plt.ylabel('accuracy')
+plt.xlabel('epoch')
+plt.legend(['train', 'valid'], loc='upper left');
+
+
+# Final evaluation of the model
+scores = model.evaluate(X_test, y_test, verbose=0)
+print("Test Accuracy: %.2f%%" % (scores[1]*100))
+Test Accuracy: 88.82%
